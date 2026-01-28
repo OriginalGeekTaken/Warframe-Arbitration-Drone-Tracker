@@ -21,6 +21,16 @@ This application is not endorsed by Digital Extremes and is fan-made. It reads y
 
 According to section 2.f of https://www.warframe.com/EULA, you agree that you will not under any circumstance "use... unauthorized third-party software, tools or content designed to modify the ...Game experience". By using any kind of third-party tool (including this one), you are breaking this clause to my understanding. You should read the EULA yourself, read the code to see what it is doing and come to your own conclusion if you want to use this tool. Refer to this PSA from Digital Extremes about third-party software to get an idea of their stance: https://forums.warframe.com/topic/1320042-third-party-software-and-you/.
 
+!! IMPORTANT NOTE !!
+
+Do not restart the application over and over in a **short** period of time, because it fetches drone kill count for baseline each time the application starts up.
+```
+If you make more than 5 api calls within too short of a time period it will trigger a block and you will not be able to login for a few days.
+```
+There should not be any issues if you use this in a normal manner (just starting it once and letting it run while you do an arbitration), 
+because it only makes api calls after completing arbitration missions that had more than 15 drone spawns.
+In the case of client users who cannot see drone spawns in EE.log, it will only make an api call if the completed mission was longer than 6 minutes.
+
 ---
 
 ## What It Tracks
