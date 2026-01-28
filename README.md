@@ -11,6 +11,18 @@ It automatically:
 
 ---
 
+## Safe To Use?
+
+This script:
+- Reads a log file
+- Queries a public Warframe profile endpoint
+
+This application is not endorsed by Digital Extremes and is fan-made. It reads your ee.log file (which is meant to be user-accessible). It does not interact with the game client or memory. However, it's important to use your own judgement and use it at your own risk. 
+
+According to section 2.f of https://www.warframe.com/EULA, you agree that you will not under any circumstance "use... unauthorized third-party software, tools or content designed to modify the ...Game experience". By using any kind of macros, overlays, or any third-party tool (including this one), you are breaking this clause to my understanding. You should read the EULA yourself, read the code to see what it is doing and come to your own conclusion if you want to use this tool. Refer to this PSA from Digital Extremes about third-party software to get an idea of their stance: https://forums.warframe.com/topic/1320042-third-party-software-and-you/.
+
+---
+
 ## What It Tracks
 
 Enemy type tracked:
@@ -135,15 +147,3 @@ Located in the same folder as the script.
 ```
 %localappdata%\Warframe\EE.log
 ```
-
----
-
-## Safe To Use?
-
-Yes. This script:
-- Reads a log file
-- Queries a public Warframe profile endpoint
-
-It does not interact with the game client or memory.
-
----
