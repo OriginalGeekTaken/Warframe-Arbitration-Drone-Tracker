@@ -227,7 +227,7 @@ def main():
                 if spawned <= MIN_SPAWNS_TO_QUERY:
                     continue
 
-                print(f"Drone count for mission: {fmt_int(spawned)}.")
+                print(f"Drone spawns for mission: {fmt_int(spawned)}.")
                 print("Waiting 5 minutes for Warframe api to sync player drone KC...")
 
                 new_total = last_total
@@ -251,10 +251,8 @@ def main():
                 if new_total > last_total:
                     delta = new_total - last_total
                     last_total = new_total
-                    emit(
-                        f"You killed {fmt_int(delta)} out of {fmt_int(spawned)} drones that mission. "
-                        f"Your drone KC is now {fmt_int(new_total)}."
-                    )
+                    emit(f"You killed {fmt_int(delta)} out of {fmt_int(spawned)} drones that mission.")
+                    emit(f"Your drone KC is now {fmt_int(new_total)}.")
 
         time.sleep(0.25)
 
