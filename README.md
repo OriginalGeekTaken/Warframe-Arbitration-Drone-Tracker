@@ -124,8 +124,8 @@ Located in the same folder as the script.
 ## Important Rules
 
 ✔ Script only queries content.warframe.com if **more than 15 drones spawned**  
-✔ Script only reads the **PLAYER ACCESSIBLE** EE.log
-✔ It does **NOT** modify game files, or interact with the game client in any way
+✔ Script only reads the **PLAYER ACCESSIBLE** EE.log  
+✔ It does **NOT** modify game files, or interact with the game client in any way  
 ✔ You can stop anytime with **Ctrl + C**
 
 ---
