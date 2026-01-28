@@ -5,7 +5,7 @@ import json
 import time
 import re
 from datetime import datetime
-from typing import Optional, Tuple, List
+from typing import Optional, List
 
 DEBUG = False
 EE_LOG_PATH = os.path.join(os.path.expanduser("~"), "AppData", "Local", "Warframe", "EE.log")
@@ -17,7 +17,8 @@ DRONE_TYPE = "/Lotus/Types/Enemies/Corpus/Drones/AIWeek/CorpusEliteShieldDroneAv
 SPAWN_LINE_SUBSTRING = "AI [Info]: OnAgentCreated /Npc/CorpusEliteShieldDroneAgent"
 SERVER_SYNC_WAIT_SECONDS = 5 * 60
 MAX_SYNC_QUERIES = 2  # initial + one retry
-MIN_SPAWNS_TO_QUERY = 15  # dont query unless more than 15 drones in mission
+MIN_SPAWNS_TO_QUERY = 15  # proceed if spawned > 15
+MIN_MISSION_SECONDS_FALLBACK = 6 * 60  # client failsafe if duration >= 6 minutes
 
 def fmt_int(n: int) -> str:
     return f"{n:,}"
@@ -62,6 +63,7 @@ def detect_profile_id_from_eelog(log_path: str) -> Optional[str]:
             if m:
                 found = m.group(1)
     return found
+
 
 def http_get_text(url: str, timeout_s: int = 12) -> str:
     try:
@@ -121,7 +123,10 @@ def print_backlog_mission_summaries(log_path: str) -> None:
                 end_ts = parse_leading_float_timestamp(line)
                 if end_ts and start_ts and spawn_count > MIN_SPAWNS_TO_QUERY:
                     shown_index += 1
-                    print(f"Mission {shown_index}: {fmt_int(spawn_count)} drone spawns in {format_duration(end_ts - start_ts)}")
+                    print(
+                        f"Mission {shown_index}: {fmt_int(spawn_count)} drone spawns in {format_duration(end_ts - start_ts)}",
+                        flush=True
+                    )
 
                 mission_active = False
                 start_ts = None
@@ -209,25 +214,47 @@ def main():
                     continue
 
                 end_ts = parse_leading_float_timestamp(end_line)
-                if end_ts in processed_end_ts:
+                if end_ts is None or end_ts in processed_end_ts:
                     continue
                 processed_end_ts.add(end_ts)
 
                 start_ts, start_offset = find_last_start_before_offset(
                     EE_LOG_PATH, end_line_offset, MISSION_START_MARKERS
                 )
-                if start_offset is None:
+                if start_offset is None or start_ts is None:
                     continue
 
                 spawned = count_drone_spawns_between_offsets(
                     EE_LOG_PATH, start_offset, end_line_offset
                 )
 
-                # only proceed if > 15 spawns
-                if spawned <= MIN_SPAWNS_TO_QUERY:
+                duration_s = end_ts - start_ts
+
+                # 1) Host: spawned > 15
+                # 2) Client failsafe: spawned <= 15 AND duration >= 6 minutes
+                proceed = False
+                spawned_is_known = False
+
+                if spawned > MIN_SPAWNS_TO_QUERY:
+                    proceed = True
+                    spawned_is_known = True
+                elif duration_s >= MIN_MISSION_SECONDS_FALLBACK:
+                    proceed = True
+                    spawned_is_known = False
+
+                if not proceed:
+                    if DEBUG:
+                        print(
+                            f"Skipping mission (spawned={spawned}, duration={format_duration(duration_s)}).",
+                            flush=True
+                        )
                     continue
 
-                print(f"Drone spawns for mission: {fmt_int(spawned)}.")
+                if spawned_is_known:
+                    print(f"Drone spawns for mission: {fmt_int(spawned)}.")
+                else:
+                    print(f"Drone spawns for mission: unknown (client). Duration: {format_duration(duration_s)}.")
+
                 print("Waiting 5 minutes for Warframe api to sync player drone KC...")
 
                 new_total = last_total
@@ -251,7 +278,12 @@ def main():
                 if new_total > last_total:
                     delta = new_total - last_total
                     last_total = new_total
-                    emit(f"You killed {fmt_int(delta)} out of {fmt_int(spawned)} drones that mission.")
+
+                    if spawned_is_known:
+                        emit(f"You killed {fmt_int(delta)} out of {fmt_int(spawned)} drones that mission.")
+                    else:
+                        emit(f"You killed {fmt_int(delta)} drones that mission.")
+
                     emit(f"Your drone KC is now {fmt_int(new_total)}.")
 
         time.sleep(0.25)
