@@ -1,140 +1,149 @@
-# Warframe Arbitration Drone Kill Tracker
+# Warframe Arbitration Drone Tracker
 
-This tool watches your **Warframe EE.log** while you play and reports how many **Arbitration Drones** you killed each mission.
+This script watches your **Warframe EE.log** and tracks **Arbitration Shield Drone** activity per mission.
 
-It works by:
-1. Detecting when a mission ends  
-2. Making sure the mission lasted at least **6 minutes**  
-3. Waiting **5 minutes** for Warframe servers to sync stats  
-4. Checking your official profile kill count via the api
-5. Printing and logging how many drones were added
+It automatically:
+- Detects when a mission ends
+- Counts how many Arbitration drones spawned during that mission
+- Waits for Warframe servers to update your stats
+- Reports how many drones **you personally killed**
+- Logs results to a file
 
 ---
 
 ## What It Tracks
 
-Enemy type:
+Enemy type tracked:
+
+`Arbitration Shield Drone`  
+Internal name:
 ```
 /Lotus/Types/Enemies/Corpus/Drones/AIWeek/CorpusEliteShieldDroneAvatar
 ```
 
-That is the **Arbitration Shield Drone**.
+Spawn detection is based on log lines like:
+```
+AI [Info]: OnAgentCreated /Npc/CorpusEliteShieldDroneAgent
+```
 
 ---
 
 ## Requirements
 
-You only need:
-
-- **Windows**
-- **Warframe**
-- **Python 3.10 or newer**
+- Windows PC
+- Warframe
+- Python **3.10+**
 
 No extra Python packages are required.
 
-Download Python here:  
+Download Python:  
 https://www.python.org/downloads/
 
-During install, make sure to check:
+During installation, check:
 
 **✔ Add Python to PATH**
 
 ---
 
-## How To Use
+## How To Run
 
-1. Put the script file in any folder.
-2. Double-click `drone_tracker.py`  
-   **OR** run in Command Prompt:
+1. Save the script in a folder
+2. Double-click the script  
+   **OR**
+   Run from Command Prompt:
 
-   ```
-   python drone_tracker.py
-   ```
-
-3. Play Warframe normally.
+```
+python drone_tracker.py
+```
 
 ---
 
-## What Happens Automatically
+## What Happens On Startup
 
-When the script starts:
+When launched, the script will:
 
-- It reads your **EE.log**
-- Detects your **profile ID**
-- Gets your current total drone kills
-- Waits for the next mission completion to check again
+1. Scan your existing `EE.log`
+2. Print summaries of past missions that had **more than 15 drone spawns**
+   Example:
+   ```
+   Mission 1: 1,240 drone spawns in 47m 36s
+   Mission 2: 2,912 drone spawns in 2h 14m 11s
+   ```
+3. Detect your Warframe **Profile ID**
+4. Fetch your current **total drone kills**
+5. Begin watching for new missions
 
 ---
 
 ## During Gameplay
 
-When you finish an Arbitration mission that lasted **6+ minutes**, the script will:
+When a mission ends, the script:
+
+1. Looks backward in the log to find when the mission started
+2. Counts drone spawns during that mission
+3. **If 15 or fewer drones spawned → mission is ignored**
+4. If more than 15 spawned:
 
 ```
-Waiting 5 minutes for Warframe servers to sync kill counts...
+Drone spawns for mission: 1,842
+Waiting 5 minutes for Warframe api to sync player drone KC...
 ```
 
-After 5 minutes:
+After 5 minutes it checks your kill count.
 
-If the servers updated:
+If stats updated:
 ```
-You killed 1,445 drones during the previous mission. Your total is now 825,087.
+You killed 1,203 out of 1,842 drones that mission. 
+Your drone KC is now 825,087.
 ```
 
-If the servers have NOT updated yet:
+If stats did not update yet:
 ```
 No change, waiting 5 more minutes...
 ```
 
-It will keep checking every 5 minutes until the kill count increases.
+If still no update after 10 minutes total:
+```
+No change after 10 minutes. Skipping this mission update.
+```
 
 ---
 
 ## Log File
 
-All results are saved to:
+Mission results are saved to:
 
 ```
 droneTracker.txt
 ```
 
-This file is created in the **same folder as the script**.
+Located in the same folder as the script.
 
 ---
 
-## Important Notes
+## Important Rules
 
-- Missions under **6 minutes** are ignored.
-- The script only reads **new lines** in EE.log after it starts.
-- It does **not** modify any game files, or interact with the client in any way.
-- You can stop the script anytime with:
-
-```
-Ctrl + C
-```
+✔ Script only queries content.warframe.com if **more than 15 drones spawned**  
+✔ Script only reads the **PLAYER ACCESSIBLE** EE.log
+✔ It does **NOT** modify game files, or interact with the game client in any way
+✔ You can stop anytime with **Ctrl + C**
 
 ---
 
-## Troubleshooting
+## Default EE.log Location
 
-### Script says it can’t find profile ID
-Make sure you:
-- Logged into Warframe at least once before running the script
-- Did not delete or move EE.log
-
-Default EE.log location:
 ```
-C:\Users\<YourName>\AppData\Local\Warframe\EE.log
+%localappdata%\Warframe\EE.log
 ```
 
 ---
 
 ## Safe To Use?
 
-Yes.  
-This tool only reads a **player accessible** log file and a public profile endpoint.  
-It does **not** interact with the game client.
+Yes. This script:
+- Reads a log file
+- Queries a public Warframe profile endpoint
+
+It does not interact with the game client or memory.
 
 ---
-
-If you'd like, you can expand this later to track mission counts, averages, or drones per hour.
