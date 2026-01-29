@@ -4,8 +4,8 @@ import sys
 import json
 import time
 import re
-from datetime import datetime
-from typing import Optional, List
+from datetime import datetime, timedelta
+from typing import Optional, List, Tuple
 
 DEBUG = False
 EE_LOG_PATH = os.path.join(os.path.expanduser("~"), "AppData", "Local", "Warframe", "EE.log")
@@ -17,8 +17,11 @@ DRONE_TYPE = "/Lotus/Types/Enemies/Corpus/Drones/AIWeek/CorpusEliteShieldDroneAv
 SPAWN_LINE_SUBSTRING = "AI [Info]: OnAgentCreated /Npc/CorpusEliteShieldDroneAgent"
 SERVER_SYNC_WAIT_SECONDS = 5 * 60
 MAX_SYNC_QUERIES = 2  # initial + one retry
-MIN_SPAWNS_TO_QUERY = 15  # proceed if spawned > 15
-MIN_MISSION_SECONDS_FALLBACK = 6 * 60  # client failsafe if duration >= 6 minutes
+MIN_SPAWNS_TO_QUERY = 15                 # proceed if spawned > 15 (host)
+MIN_MISSION_SECONDS_FALLBACK = 6 * 60    # client failsafe if duration >= 6 minutes
+BASELINE_CACHE_TTL_SECONDS = 5 * 60      # if baseline fetched within last 5 minutes, reuse it
+BASELINE_CACHE_TAG = "BASELINE_CACHE"
+BASELINE_LINE_RE = re.compile(r"^\[(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s+BASELINE_CACHE\s+kill_total=(?P<kc>\d+)\s*$")
 
 def fmt_int(n: int) -> str:
     return f"{n:,}"
@@ -31,6 +34,48 @@ def emit(message: str) -> None:
             f.write(f"[{ts}] {message}\n")
     except Exception as e:
         print(f"(warning) failed to write {LOG_OUTPUT_PATH}: {e}", flush=True)
+
+def log_api_fetch(kind: str, details: str = "") -> None:
+    msg = f"API_FETCH kind={kind} {details}".strip()
+    emit(msg)
+
+def write_baseline_cache(kill_total: int) -> None:
+    emit(f"{BASELINE_CACHE_TAG} kill_total={kill_total}")
+
+def read_recent_baseline_cache(ttl_seconds: int) -> Optional[int]:
+    if not os.path.exists(LOG_OUTPUT_PATH):
+        return None
+
+    cutoff = datetime.now() - timedelta(seconds=ttl_seconds)
+
+    try:
+        with open(LOG_OUTPUT_PATH, "rb") as bf:
+            bf.seek(0, os.SEEK_END)
+            size = bf.tell()
+            read_size = min(size, 256 * 1024)  # last 256KB
+            if read_size == 0:
+                return None
+            bf.seek(size - read_size)
+            chunk = bf.read(read_size).decode("utf-8", errors="ignore")
+    except Exception:
+        return None
+
+    lines = chunk.splitlines()
+    for line in reversed(lines):
+        m = BASELINE_LINE_RE.match(line.strip())
+        if not m:
+            continue
+        try:
+            ts = datetime.strptime(m.group("ts"), "%Y-%m-%d %H:%M:%S")
+            kc = int(m.group("kc"))
+        except Exception:
+            continue
+
+        if ts >= cutoff:
+            return kc
+        return None  # cache found but its been more than 5 minutes
+
+    return None
 
 def parse_leading_float_timestamp(line: str) -> Optional[float]:
     try:
@@ -63,7 +108,6 @@ def detect_profile_id_from_eelog(log_path: str) -> Optional[str]:
             if m:
                 found = m.group(1)
     return found
-
 
 def http_get_text(url: str, timeout_s: int = 12) -> str:
     try:
@@ -140,12 +184,12 @@ class EeLogTailer:
     def prime_to_eof(self):
         self.marker = safe_stat_size(self.path)
 
-    def read_new_lines_with_offsets(self):
+    def read_new_lines_with_offsets(self) -> Tuple[List[Tuple[str, int]], int]:
         size = safe_stat_size(self.path)
         if size < self.marker:
             self.marker = 0
 
-        out = []
+        out: List[Tuple[str, int]] = []
         with open(self.path, "r", encoding="utf-8", errors="ignore") as f:
             f.seek(self.marker)
             while True:
@@ -171,7 +215,11 @@ def count_drone_spawns_between_offsets(file_path: str, start_offset: int, end_of
                 count += 1
     return count
 
-def find_last_start_before_offset(file_path: str, end_file_offset: int, start_markers: List[str]):
+def find_last_start_before_offset(
+    file_path: str,
+    end_file_offset: int,
+    start_markers: List[str],
+) -> Tuple[Optional[float], Optional[int]]:
     last_ts = None
     last_offset = None
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -194,8 +242,16 @@ def main():
         sys.exit(1)
     print(f"Profile ID: {profile_id}")
 
-    last_total = fetch_drone_kill_total(profile_id)
-    print(f"Drone KC: {fmt_int(last_total)}")
+    # Baseline kill count with safety cache to reduce API calls on rapid restarts
+    cached = read_recent_baseline_cache(BASELINE_CACHE_TTL_SECONDS)
+    if cached is not None:
+        last_total = cached
+        print(f"Drone KC (cached): {fmt_int(last_total)}")
+    else:
+        log_api_fetch("baseline", f"profile_id={profile_id}")
+        last_total = fetch_drone_kill_total(profile_id)
+        print(f"Drone KC: {fmt_int(last_total)}")
+        write_baseline_cache(last_total)
 
     tailer = EeLogTailer(EE_LOG_PATH)
     tailer.prime_to_eof()
@@ -227,7 +283,6 @@ def main():
                 spawned = count_drone_spawns_between_offsets(
                     EE_LOG_PATH, start_offset, end_line_offset
                 )
-
                 duration_s = end_ts - start_ts
 
                 # 1) Host: spawned > 15
@@ -246,14 +301,16 @@ def main():
                     if DEBUG:
                         print(
                             f"Skipping mission (spawned={spawned}, duration={format_duration(duration_s)}).",
-                            flush=True
+                            flush=True,
                         )
                     continue
 
                 if spawned_is_known:
                     print(f"Drone spawns for mission: {fmt_int(spawned)}.")
                 else:
-                    print(f"Drone spawns for mission: unknown (client). Duration: {format_duration(duration_s)}.")
+                    print(
+                        f"Drone spawns for mission: unknown (client). Duration: {format_duration(duration_s)}."
+                    )
 
                 print("Waiting 5 minutes for Warframe api to sync player drone KC...")
 
@@ -261,6 +318,7 @@ def main():
                 for attempt in range(1, MAX_SYNC_QUERIES + 1):
                     time.sleep(SERVER_SYNC_WAIT_SECONDS)
                     try:
+                        log_api_fetch("post_mission", f"profile_id={profile_id} attempt={attempt}")
                         new_total = fetch_drone_kill_total(profile_id)
                     except Exception as e:
                         print(f"(WARNING) profile query failed: {e}", file=sys.stderr)
@@ -280,11 +338,14 @@ def main():
                     last_total = new_total
 
                     if spawned_is_known:
-                        emit(f"You killed {fmt_int(delta)} out of {fmt_int(spawned)} drones that mission.")
+                        emit(
+                            f"You killed {fmt_int(delta)} out of {fmt_int(spawned)} drones that mission."
+                        )
                     else:
                         emit(f"You killed {fmt_int(delta)} drones that mission.")
 
                     emit(f"Your drone KC is now {fmt_int(new_total)}.")
+                    write_baseline_cache(last_total)
 
         time.sleep(0.25)
 
