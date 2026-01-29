@@ -306,7 +306,7 @@ def main():
                     continue
 
                 if spawned_is_known:
-                    print(f"Drone spawns for mission: {fmt_int(spawned)}.")
+                    print(f"Drone spawns for mission: {fmt_int(spawned)}. Duration: {format_duration(duration_s)}")
                 else:
                     print(
                         f"Drone spawns for mission: unknown (client). Duration: {format_duration(duration_s)}."
